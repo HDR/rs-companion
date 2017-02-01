@@ -244,7 +244,7 @@
                 $location.path("/grand-exchange");
             };
             geScope.instaBuyItem = function () {
-                geFuns.buy(geScope.slotId, geScope.item.id, 1, geScope.item.instaSell);
+                geFuns.buy(geScope.slotId, geScope.item.id, 1, geScope.item.instaBuy);
                 $location.path("/grand-exchange");
             };
 
