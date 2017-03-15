@@ -24,6 +24,8 @@
             angular = unsafeWindow.angular;
             window.clearInterval(initWatcher);
             init();
+            //clear the initial loading screen because it loads inconsistently normally
+            angular.element(document).find("body").removeClass("initial-load");
         }
     }, 100);
 
