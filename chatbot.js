@@ -14,7 +14,12 @@
     var angular;
 
     var $root;
-    var fcService;
+    var sendFcMessage;
+    var sendCcMessage;
+    var sendPrivMessage;
+    var addFriend;
+    var rmFriend;
+    var isFriend;
     var $http;
     var botCommands = {};
 
@@ -34,25 +39,98 @@
     init = function () {
         $root = angular.element(document.body).scope().$root;
         $http = angular.element(document.body).injector().get("$http");
-        fcService = angular.element(document.body).injector().get("FriendsChatService");
+
+        var fcService = angular.element(document.body).injector().get("FriendsChatService");
+        var ccService = angular.element(document.body).injector().get("ClanChatService");
+        var pmService = angular.element(document.body).injector().get("PrivateChatService");
+        var userService = angular.element(document.body).injector().get("UserService");
+        sendFcMessage = function (x) {
+            return fcService.send(x)
+        };
+        sendCcMessage = function (x) {
+            return ccService.send(x)
+        };
+        sendPrivMessage = function (x, y) {
+            return pmService.send(x, y)
+        };
+        addFriend = function (x) {
+            return userService.addFriend(x)
+        };
+        rmFriend = function (x) {
+            return userService.removeFriend(x)
+        };
+        isFriend = function (x) {
+            return userService.isFriend(x)
+        };
 
         $root.$on("friendsChatMessageReceived", function (_, message) {
+            if (message.fromMe || message.notification) {
+                return;
+            }
             var commandFn = botCommands[message.content.toLowerCase()];
             if (commandFn) {
-                commandFn();
+                commandFn("fc");
             }
         });
 
-        $root.$on("sendMessage", function (_, message) {
+        $root.$on("privateChatMessageReceived", function (_, message) {
+            if (message.fromMe || message.notification) {
+                return;
+            }
+            var commandFn = botCommands[message.content.toLowerCase()];
+            if (commandFn) {
+                commandFn("pm", message.displayName);
+            }
+        });
+
+        $root.$on("clanChatMessageReceived", function (_, message) {
+            if (message.fromMe || message.notification) {
+                return;
+            }
+            var commandFn = botCommands[message.content.toLowerCase()];
+            if (commandFn) {
+                commandFn("cc");
+            }
+        });
+        var sendMessage = function (message, delivery) {
             var messageChunks = message.match(/.{1,80}/g);
             messageChunks.forEach(function (msg) {
-                fcService[Object.keys(fcService)[4]](msg);
+                delivery(msg);
             });
+        };
+
+        $root.$on("sendMessage", function (_, message, src, user) {
+            switch (src) {
+                case "fc":
+                    sendMessage(message, sendFcMessage);
+                    break;
+                case "cc":
+                    sendMessage(message, sendCcMessage);
+                    break;
+                case "pm":
+                    var sendAndRemoveFriend = function () {
+                        sendMessage(message, function (msg) {
+                            sendPrivMessage(user, msg);
+                        });
+                        rmFriend(user);
+                    };
+                    if (isFriend(user)) {
+                        sendAndRemoveFriend();
+                    }
+                    else {
+                        var unregister = $root.$on("friendsListUpdated", function () {
+                            unregister();
+                            setTimeout(sendAndRemoveFriend, 1000);
+                        });
+                        addFriend(user);
+                    }
+                    break;
+            }
         });
     };
 
-    var queueMessage = function (message) {
-        $root.$broadcast("sendMessage", message);
+    var queueMessage = function (message, src, user) {
+        $root.$broadcast("sendMessage", message, src, user);
     };
 
     // cors for cross origin restrictions on requests to websites that restrict it
@@ -66,7 +144,7 @@
         var daysIntoRotationInterval = (daysAfterEpoch + offset) % (rotationLength * numRotations);
         var rotationNumber = Math.floor(daysIntoRotationInterval / rotationLength);
         var daysUntilNext = rotationLength - (daysIntoRotationInterval % rotationLength);
-        return {rotationNumber: rotationNumber, daysUntilNext: daysUntilNext}
+        return {rotationNumber: rotationNumber, daysUntilNext: daysUntilNext};
     };
 
 
@@ -93,20 +171,20 @@
     };
 
     // a very basic "hello world" command
-    addCommand("fooh", function () {
-        queueMessage("sucks!");
+    addCommand("fooh", function (src, user) {
+        queueMessage("sucks!", src, user);
     });
 
     // rax rotation
-    addCommand("araxxi", function () {
+    addCommand("araxxi", function (src, user) {
         var rotations = ["2/3", "1/3", "1/2"];
         var rotationInfo = rotation(4, 3, 3);
-        queueMessage(`current: ${rotations[rotationInfo.rotationNumber]}, changes in ${rotationInfo.daysUntilNext} days`);
+        queueMessage(`current paths: ${rotations[rotationInfo.rotationNumber]}, changes in ${rotationInfo.daysUntilNext} days`, src, user);
     });
     aliasCommand("araxxi", ["rax", "raxi", "araxxor"]);
 
     // get VoS via tweetbot
-    addCommand("vos", function () {
+    addCommand("vos", function (src, user) {
         $http({
             method: "GET",
             // Twitter API not used because I'm not leaking my API key
@@ -114,15 +192,15 @@
         }).then(function (response) {
             var vosMessages = /\w+ and \w+ districts at \d{2}:\d{2} UTC/.exec(response.data.body);
             if (vosMessages) {
-                queueMessage(vosMessages[0]);
+                queueMessage(vosMessages[0], src, user);
             }
         }, function () {
-            queueMessage("failed to get vos");
+            queueMessage("failed to get vos", src, user);
         });
     });
 
     // get portables from the spreadsheet
-    addCommand("portables", function () {
+    addCommand("portables", function (src, user) {
         $http({
             method: "GET",
             // my Google API key is limited to my IP so use your own
@@ -130,9 +208,9 @@
         }).then(function (response) {
             queueMessage(response.data.values.map(function (x) {
                 return x.join(":");
-            }).join("/"));
+            }).join("/"), src, user);
         }, function () {
-            queueMessage("failed to get portables");
+            queueMessage("failed to get portables", src, user);
         });
     });
     aliasCommand("portables", ["ports", "p"]);
