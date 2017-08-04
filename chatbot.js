@@ -58,8 +58,6 @@
             xhr.setRequestHeader("Content-type", "application/json");
             var data = JSON.stringify(msgJson);
             xhr.send(data);
-            xhr.onreadystatechange = function() {
-            };
         });
         var sendMessage = function (message, delivery) {
             var messageChunks = message.match(/.{1,80}/g);
